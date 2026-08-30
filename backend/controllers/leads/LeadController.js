@@ -725,7 +725,6 @@ export class LeadController {
       const validationErrors = validateLeadRequest(input);
 
       if (submissionType === "contact" && !input.message) validationErrors.push("Message is required");
-      if (submissionType === "consultation" && !input.raw.preferredDate) validationErrors.push("Preferred date is required");
       if (submissionType === "consultation" && !input.requiredService) validationErrors.push("Required service is required");
       if (submissionType === "service_enquiry" && !input.requiredService) validationErrors.push("Required service is required");
       if (validationErrors.length) {

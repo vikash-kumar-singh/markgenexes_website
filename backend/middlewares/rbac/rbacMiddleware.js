@@ -11,7 +11,7 @@ export const requireOrganization = async (req, res, next) => {
     const membership = await Membership.findOne({
       user: req.user.id,
       organization: organizationId,
-      status: { $in: ["active", "invited"] },
+      status: "active",
     });
 
     if (!membership) {
@@ -36,7 +36,7 @@ export const checkPermission = (requiredResource, requiredAction) => {
 
       const role = await Role.findById(req.membership.role);
 
-      if (!role) {
+      if (!role || role.status !== "active" || String(role.organization) !== String(req.organizationId)) {
         return res.status(403).json({ error: "Role not found" });
       }
 
@@ -71,7 +71,7 @@ export const checkRoleAccess = (allowedRoles) => {
 
       const role = await Role.findById(req.membership.role);
 
-      if (!role) {
+      if (!role || role.status !== "active" || String(role.organization) !== String(req.organizationId)) {
         return res.status(403).json({ error: "Role not found" });
       }
 
@@ -98,7 +98,13 @@ export const isAdmin = async (req, res, next) => {
 
     const role = await Role.findById(req.membership.role);
 
-    if (!role || !role.isSystem || role.name !== "admin") {
+    if (
+      !role ||
+      role.status !== "active" ||
+      String(role.organization) !== String(req.organizationId) ||
+      !role.isSystem ||
+      role.name !== "admin"
+    ) {
       return res.status(403).json({ error: "Admin access required" });
     }
 

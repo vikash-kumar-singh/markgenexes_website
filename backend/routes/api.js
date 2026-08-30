@@ -1,14 +1,19 @@
 import express from "express";
 import multer from "multer";
+import mongoose from "mongoose";
 import { LeadController } from "../controllers/leads/LeadController.js";
 import { IndustryController } from "../controllers/cms/IndustryController.js";
 import { CareerController } from "../controllers/careers/CareerController.js";
 import { TrackingController } from "../controllers/analytics/TrackingController.js";
 import { CaseStudyController } from "../controllers/cms/CaseStudyController.js";
 import { PartnerContentController } from "../controllers/partnerships/PartnerContentController.js";
-import { isAuthenticated } from "../middlewares/auth/tokenMiddleware.js";
+import { isAuthenticated, requireAdminAccess } from "../middlewares/auth/tokenMiddleware.js";
+import { createRateLimiter } from "../middlewares/security/securityMiddleware.js";
 
 const router = express.Router();
+const publicWriteLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 30, keyPrefix: "public-write" });
+const trackingLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 180, keyPrefix: "tracking" });
+const applicationLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 10, keyPrefix: "job-application" });
 const resumeUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
@@ -25,21 +30,36 @@ const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize
 const acceptImage = (req, res, next) => imageUpload.single("image")(req, res, (error) => error ? res.status(400).json({ error: error.code === "LIMIT_FILE_SIZE" ? "Image must be 8 MB or smaller" : error.message }) : next());
 
 router.get("/", (req, res) => {
-  res.json({ message: "API is working" });
+  res.json({ message: "MarkGenexes API", version: "v1" });
 });
 
-router.post("/v1/public/leads", LeadController.publicLead);
-router.post("/v1/public/contact", LeadController.publicContact);
-router.post("/v1/public/consultations", LeadController.publicConsultation);
-router.post("/v1/public/service-enquiries", LeadController.publicServiceEnquiry);
+router.get("/v1/health", (req, res) => {
+  res.json({ status: "ok", service: "markgenexes-api", uptime: process.uptime(), timestamp: new Date().toISOString(), requestId: req.id });
+});
+router.get("/v1/ready", (req, res) => {
+  const databaseReady = mongoose.connection.readyState === 1;
+  res.status(databaseReady ? 200 : 503).json({
+    status: databaseReady ? "ready" : "not-ready",
+    database: databaseReady ? "connected" : "disconnected",
+    timestamp: new Date().toISOString(),
+    requestId: req.id,
+  });
+});
+
+router.post("/v1/public/leads", publicWriteLimiter, LeadController.publicLead);
+router.post("/v1/public/contact", publicWriteLimiter, LeadController.publicContact);
+router.post("/v1/public/consultations", publicWriteLimiter, LeadController.publicConsultation);
+router.post("/v1/public/service-enquiries", publicWriteLimiter, LeadController.publicServiceEnquiry);
 router.get("/v1/public/industries", IndustryController.publicList);
 router.get("/v1/public/jobs", CareerController.publicJobs);
 router.get("/v1/public/case-studies", CaseStudyController.publicList);
 router.get("/v1/public/partners", PartnerContentController.publicList);
 router.get("/v1/public/case-study-images/:id", CaseStudyController.image);
 router.get("/v1/public/tracking", TrackingController.publicConfig);
-router.post("/v1/public/tracking/events", TrackingController.collect);
-router.post("/v1/public/jobs/:id/applications", acceptResume, CareerController.apply);
+router.post("/v1/public/tracking/events", trackingLimiter, TrackingController.collect);
+router.post("/v1/public/jobs/:id/applications", applicationLimiter, acceptResume, CareerController.apply);
+
+router.use("/v1/admin", isAuthenticated, requireAdminAccess);
 
 router.get("/v1/admin/jobs", isAuthenticated, CareerController.adminJobs);
 router.get("/v1/admin/case-studies", isAuthenticated, CaseStudyController.adminList);
@@ -85,7 +105,7 @@ router.post("/forms/consultation-bookings", LeadController.create);
 router.post("/forms/service-enquiries", LeadController.create);
 router.post("/careers/applications", LeadController.create);
 router.post("/partnerships/applications", LeadController.create);
-router.get("/leads", isAuthenticated, LeadController.list);
-router.patch("/leads/:id", isAuthenticated, LeadController.update);
+router.get("/leads", isAuthenticated, requireAdminAccess, LeadController.list);
+router.patch("/leads/:id", isAuthenticated, requireAdminAccess, LeadController.update);
 
 export default router;

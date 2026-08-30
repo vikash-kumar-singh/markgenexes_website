@@ -1,7 +1,7 @@
 {
   "name": "markgenx-backend",
   "version": "1.0.0",
-  "description": "a leads generation software",
+  "description": "MarkGenexes enterprise website and operations API",
   "keywords": [
     "node"
   ],
@@ -10,8 +10,15 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "node --test",
+    "check": "node --check index.js && node --test",
+    "db:sync-indexes": "node scripts/syncDatabaseIndexes.js",
+    "admin:promote": "node scripts/promoteAdmin.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

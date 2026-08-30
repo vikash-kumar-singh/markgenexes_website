@@ -201,7 +201,7 @@ export class OrganizationController {
     try {
       const { email, roleId } = req.body;
 
-      if (!email || !roleId) {
+      if (typeof email !== "string" || !email.trim() || !roleId) {
         return res.status(400).json({ error: "Email and role are required" });
       }
 
@@ -211,60 +211,54 @@ export class OrganizationController {
       }
 
       const role = await Role.findById(roleId);
-      if (!role || role.organization.toString() !== req.organizationId.toString()) {
+      if (!role || String(role.organization) !== String(req.organizationId)) {
         return res.status(404).json({ error: "Role not found" });
       }
 
-      // Check if user already a member
-      let user = await User.findOne({ email: email.toLowerCase() });
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        return res.status(400).json({ error: "A valid email address is required" });
+      }
+      const user = await User.findOne({ email: normalizedEmail });
       const existingMembership = await Membership.findOne({
         organization: req.organizationId,
-        user: user ? user._id : null,
+        ...(user ? { user: user._id } : { invitedEmail: normalizedEmail }),
       });
 
       if (existingMembership) {
         return res.status(409).json({ error: "User is already a member of this organization" });
       }
 
-      const invitationToken = JwtUtil.generateEmailVerificationToken(user ? user._id : email);
+      const invitationToken = JwtUtil.generateInvitationToken({
+        email: normalizedEmail,
+        organizationId: req.organizationId,
+      });
       const invitationLink = `${process.env.APP_URL || "http://localhost:3000"}/accept-invitation?token=${invitationToken}`;
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-      if (!user) {
-        // Create temporary membership for non-existing user
-        const membership = new Membership({
-          organization: req.organizationId,
-          role: roleId,
-          status: "invited",
-          invitedBy: req.user.id,
-          invitationToken,
-          invitationExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        });
-        await membership.save();
-      } else {
-        // Create membership for existing user
-        const membership = new Membership({
-          user: user._id,
-          organization: req.organizationId,
-          role: roleId,
-          status: "invited",
-          invitedBy: req.user.id,
-          invitationToken,
-          invitationExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        });
-        await membership.save();
-      }
+      await Membership.create({
+        ...(user ? { user: user._id } : { invitedEmail: normalizedEmail }),
+        organization: req.organizationId,
+        role: roleId,
+        status: "invited",
+        invitedBy: req.user.id,
+        invitationToken,
+        invitationExpires: expiresAt,
+      });
 
       // Save invitation token
       await AuthToken.create({
-        user: user ? user._id : null,
+        ...(user ? { user: user._id } : {}),
+        email: normalizedEmail,
+        organization: req.organizationId,
         token: invitationToken,
         type: "invitation",
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        expiresAt,
       });
 
       // Send invitation email
       try {
-        await EmailUtil.sendInvitationEmail(email, invitationLink, organization.name);
+        await EmailUtil.sendInvitationEmail(normalizedEmail, invitationLink, organization.name);
       } catch (emailError) {
         console.error("Email send failed:", emailError);
       }
@@ -272,9 +266,9 @@ export class OrganizationController {
       res.status(201).json({
         message: "Invitation sent successfully",
         invitation: {
-          email,
+          email: normalizedEmail,
           role: role.name,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          expiresAt,
         },
       });
     } catch (error) {
@@ -294,10 +288,24 @@ export class OrganizationController {
         return res.status(400).json({ error: "Invitation token is required" });
       }
 
-      const decoded = JwtUtil.verifyEmailToken(token);
-      if (!decoded) {
+      const decoded = JwtUtil.verifyInvitationToken(token);
+      if (!decoded?.email || !decoded?.organizationId) {
         return res.status(400).json({ error: "Invalid or expired invitation token" });
       }
+
+      if (decoded.email.toLowerCase() !== req.user.email.toLowerCase()) {
+        return res.status(403).json({ error: "This invitation was issued to another email address" });
+      }
+
+      const storedToken = await AuthToken.findOne({
+        token,
+        type: "invitation",
+        email: decoded.email.toLowerCase(),
+        organization: decoded.organizationId,
+        isUsed: false,
+        expiresAt: { $gt: new Date() },
+      });
+      if (!storedToken) return res.status(400).json({ error: "Invitation token has expired or already been used" });
 
       const membership = await Membership.findOne({
         invitationToken: token,
@@ -307,8 +315,25 @@ export class OrganizationController {
       if (!membership) {
         return res.status(404).json({ error: "Invitation not found" });
       }
+      if (
+        !membership.organization ||
+        !membership.role ||
+        membership.organization._id.toString() !== String(decoded.organizationId) ||
+        !membership.invitationExpires ||
+        membership.invitationExpires <= new Date()
+      ) {
+        return res.status(400).json({ error: "Invitation has expired or is invalid" });
+      }
+
+      const duplicateMembership = await Membership.exists({
+        user: req.user.id,
+        organization: membership.organization._id,
+        _id: { $ne: membership._id },
+      });
+      if (duplicateMembership) return res.status(409).json({ error: "User is already a member of this organization" });
 
       membership.user = req.user.id;
+      membership.invitedEmail = undefined;
       membership.status = "active";
       membership.joinedAt = new Date();
       membership.invitationToken = null;
@@ -317,7 +342,9 @@ export class OrganizationController {
       await membership.save();
 
       // Mark token as used
-      await AuthToken.updateOne({ token }, { isUsed: true, usedAt: new Date() });
+      storedToken.isUsed = true;
+      storedToken.usedAt = new Date();
+      await storedToken.save();
 
       res.json({
         message: "Invitation accepted successfully",
@@ -356,7 +383,7 @@ export class OrganizationController {
               avatar: m.user.avatar,
             }
           : null,
-        role: m.role.name,
+        role: m.role?.name || null,
         status: m.status,
         joinedAt: m.joinedAt,
         invitedBy: m.invitedBy,
@@ -380,13 +407,16 @@ export class OrganizationController {
         return res.status(400).json({ error: "Role ID is required" });
       }
 
-      const membership = await Membership.findById(req.params.memberId).populate("role");
+      const membership = await Membership.findOne({
+        _id: req.params.memberId,
+        organization: req.organizationId,
+      }).populate("role");
       if (!membership) {
         return res.status(404).json({ error: "Membership not found" });
       }
 
       const role = await Role.findById(roleId);
-      if (!role || role.organization.toString() !== req.organizationId.toString()) {
+      if (!role || String(role.organization) !== String(req.organizationId)) {
         return res.status(404).json({ error: "Role not found" });
       }
 
@@ -411,7 +441,10 @@ export class OrganizationController {
    */
   static async removeMember(req, res) {
     try {
-      const membership = await Membership.findById(req.params.memberId);
+      const membership = await Membership.findOne({
+        _id: req.params.memberId,
+        organization: req.organizationId,
+      });
       if (!membership) {
         return res.status(404).json({ error: "Membership not found" });
       }

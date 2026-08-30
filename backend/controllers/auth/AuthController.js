@@ -25,7 +25,16 @@ export class AuthController {
       const requiresEmailVerification = AuthController.requiresEmailVerification();
 
       // Validation
-      if (!firstName || !lastName || !email || !password) {
+      if (
+        typeof firstName !== "string" ||
+        typeof lastName !== "string" ||
+        typeof email !== "string" ||
+        typeof password !== "string" ||
+        !firstName.trim() ||
+        !lastName.trim() ||
+        !email.trim() ||
+        !password
+      ) {
         return res.status(400).json({ error: "All fields are required" });
       }
 
@@ -40,7 +49,8 @@ export class AuthController {
       }
 
       // Check if user exists
-      const existingUser = await User.findOne({ email: email.toLowerCase() });
+      const normalizedEmail = email.trim().toLowerCase();
+      const existingUser = await User.findOne({ email: normalizedEmail });
       if (existingUser) {
         return res.status(409).json({ error: "Email already registered" });
       }
@@ -50,9 +60,9 @@ export class AuthController {
 
       // Create user
       const user = new User({
-        firstName,
-        lastName,
-        email: email.toLowerCase(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: normalizedEmail,
         passwordHash,
         emailVerified: !requiresEmailVerification,
         status: requiresEmailVerification ? "pending" : "active",
@@ -114,6 +124,15 @@ export class AuthController {
         return res.status(400).json({ error: "Invalid or expired verification token" });
       }
 
+      const storedToken = await AuthToken.findOne({
+        token,
+        type: "email_verification",
+        user: decoded.userId,
+        isUsed: false,
+        expiresAt: { $gt: new Date() },
+      });
+      if (!storedToken) return res.status(400).json({ error: "Verification token has expired or already been used" });
+
       const user = await User.findById(decoded.userId);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
@@ -125,7 +144,9 @@ export class AuthController {
       await user.save();
 
       // Mark token as used
-      await AuthToken.updateOne({ token }, { isUsed: true, usedAt: new Date() });
+      storedToken.isUsed = true;
+      storedToken.usedAt = new Date();
+      await storedToken.save();
 
       res.json({
         message: "Email verified successfully",
@@ -148,11 +169,11 @@ export class AuthController {
     try {
       const { email, password } = req.body;
 
-      if (!email || !password) {
+      if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
         return res.status(400).json({ error: "Email and password are required" });
       }
 
-      const user = await User.findOne({ email: email.toLowerCase() }).select("+passwordHash +loginAttempts +lockUntil");
+      const user = await User.findOne({ email: email.trim().toLowerCase() }).select("+passwordHash +loginAttempts +lockUntil");
 
       if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
@@ -211,10 +232,12 @@ export class AuthController {
 
       // Get user organizations
       const memberships = await Membership.find({ user: user._id, status: "active" }).populate("organization");
-      const organizations = memberships.map((m) => ({
-        id: m.organization._id,
-        name: m.organization.name,
-      }));
+      const organizations = memberships
+        .filter((membership) => membership.organization)
+        .map((membership) => ({
+          id: membership.organization._id,
+          name: membership.organization.name,
+        }));
 
       res.json({
         message: "Login successful",
@@ -225,6 +248,7 @@ export class AuthController {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          role: user.role,
           organizations,
         },
       });
@@ -254,10 +278,16 @@ export class AuthController {
         user: decoded.userId,
         token: refreshToken,
         isRevoked: false,
+        expiresAt: { $gt: new Date() },
       });
 
       if (!session) {
         return res.status(401).json({ error: "Refresh token not found or revoked" });
+      }
+
+      const user = await User.findById(decoded.userId).select("status");
+      if (!user || user.status !== "active") {
+        return res.status(403).json({ error: "User account is not active" });
       }
 
       const newAccessToken = JwtUtil.generateAccessToken({ userId: decoded.userId });
@@ -300,11 +330,11 @@ export class AuthController {
     try {
       const { email } = req.body;
 
-      if (!email) {
+      if (typeof email !== "string" || !email.trim()) {
         return res.status(400).json({ error: "Email is required" });
       }
 
-      const user = await User.findOne({ email: email.toLowerCase() });
+      const user = await User.findOne({ email: email.trim().toLowerCase() });
       if (!user) {
         // Don't reveal if user exists
         return res.json({ message: "If email exists, password reset link has been sent" });
@@ -312,6 +342,11 @@ export class AuthController {
 
       const resetToken = JwtUtil.generatePasswordResetToken(user._id);
       const resetLink = `${process.env.APP_URL || "http://localhost:3000"}/reset-password?token=${resetToken}`;
+
+      await AuthToken.updateMany(
+        { user: user._id, type: "password_reset", isUsed: false },
+        { isUsed: true, usedAt: new Date() }
+      );
 
       // Save reset token
       await AuthToken.create({
@@ -360,6 +395,15 @@ export class AuthController {
         return res.status(400).json({ error: "Invalid or expired reset token" });
       }
 
+      const storedToken = await AuthToken.findOne({
+        token,
+        type: "password_reset",
+        user: decoded.userId,
+        isUsed: false,
+        expiresAt: { $gt: new Date() },
+      });
+      if (!storedToken) return res.status(400).json({ error: "Reset token has expired or already been used" });
+
       const user = await User.findById(decoded.userId);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
@@ -372,7 +416,13 @@ export class AuthController {
       await user.save();
 
       // Mark token as used
-      await AuthToken.updateOne({ token }, { isUsed: true, usedAt: new Date() });
+      storedToken.isUsed = true;
+      storedToken.usedAt = new Date();
+      await storedToken.save();
+      await RefreshSession.updateMany(
+        { user: user._id, isRevoked: false },
+        { isRevoked: true, revokedAt: new Date(), revokedReason: "Password reset" }
+      );
 
       res.json({ message: "Password reset successfully. Please login with your new password." });
     } catch (error) {
@@ -395,11 +445,13 @@ export class AuthController {
       // Get user organizations
       const memberships = await Membership.find({ user: user._id, status: "active" }).populate("organization role");
 
-      const organizations = memberships.map((m) => ({
-        id: m.organization._id,
-        name: m.organization.name,
-        role: m.role.name,
-      }));
+      const organizations = memberships
+        .filter((membership) => membership.organization)
+        .map((membership) => ({
+          id: membership.organization._id,
+          name: membership.organization.name,
+          role: membership.role?.name || null,
+        }));
 
       res.json({
         user: {
@@ -407,6 +459,7 @@ export class AuthController {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          role: user.role,
           avatar: user.avatar,
           organizations,
           preferences: user.preferences,
@@ -430,9 +483,9 @@ export class AuthController {
         return res.status(404).json({ error: "User not found" });
       }
 
-      if (firstName) user.firstName = firstName;
-      if (lastName) user.lastName = lastName;
-      if (phone) user.phone = phone;
+      if (typeof firstName === "string" && firstName.trim()) user.firstName = firstName.trim();
+      if (typeof lastName === "string" && lastName.trim()) user.lastName = lastName.trim();
+      if (typeof phone === "string") user.phone = phone.trim();
       if (preferences) user.preferences = { ...user.preferences, ...preferences };
 
       await user.save();
@@ -487,7 +540,12 @@ export class AuthController {
       user.passwordHash = await PasswordUtil.hash(newPassword);
       await user.save();
 
-      res.json({ message: "Password changed successfully" });
+      await RefreshSession.updateMany(
+        { user: user._id, isRevoked: false },
+        { isRevoked: true, revokedAt: new Date(), revokedReason: "Password changed" }
+      );
+
+      res.json({ message: "Password changed successfully. Please sign in again." });
     } catch (error) {
       res.status(500).json({ error: "Password change failed", details: error.message });
     }

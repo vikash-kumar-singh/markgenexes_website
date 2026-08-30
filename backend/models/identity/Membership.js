@@ -5,8 +5,11 @@ const membershipSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required() {
+        return this.status !== "invited";
+      },
     },
+    invitedEmail: { type: String, trim: true, lowercase: true },
     organization: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Organization",
@@ -42,7 +45,14 @@ const membershipSchema = new mongoose.Schema(
   }
 );
 
-membershipSchema.index({ user: 1, organization: 1 }, { unique: true });
+membershipSchema.index(
+  { user: 1, organization: 1 },
+  { unique: true, partialFilterExpression: { user: { $type: "objectId" } } }
+);
+membershipSchema.index(
+  { organization: 1, invitedEmail: 1 },
+  { unique: true, partialFilterExpression: { invitedEmail: { $type: "string" } } }
+);
 membershipSchema.index({ organization: 1, status: 1 });
 membershipSchema.index({ status: 1 });
 

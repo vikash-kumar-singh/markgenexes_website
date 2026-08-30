@@ -46,8 +46,52 @@ export function clearTokens() {
   localStorage.removeItem(TOKEN_KEY)
 }
 
-function getApiError(error, fallback = 'Request failed') {
-  return error.response?.data?.error || error.response?.data?.message || error.message || fallback
+function serverErrorMessage(error) {
+  const message = error.response?.data?.error || error.response?.data?.message
+  if (typeof message !== 'string' || !message.trim()) return ''
+  if (/^request failed with status code \d+$/i.test(message.trim())) return ''
+  return message.trim()
+}
+
+export function getApiError(error, fallback = 'We could not complete your request. Please try again.') {
+  const message = serverErrorMessage(error)
+  if (message) return message
+
+  if (error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '')) {
+    return 'The request took too long. Please check your connection and try again.'
+  }
+
+  const status = error?.response?.status
+  const statusMessages = {
+    400: 'Please check the information you entered and try again.',
+    401: 'Your session has expired. Please sign in and try again.',
+    403: 'You do not have permission to complete this action.',
+    404: 'The requested information is currently unavailable.',
+    408: 'The request took too long. Please try again.',
+    409: 'This request conflicts with an existing record. Please refresh and try again.',
+    413: 'The selected file or request is too large.',
+    429: 'Too many requests were sent. Please wait a moment and try again.',
+    500: 'Something went wrong while processing your request. Please try again.',
+    502: 'The service is temporarily unavailable. Please try again in a moment.',
+    503: 'The service is temporarily unavailable. Please try again in a moment.',
+    504: 'The service is taking longer than expected. Please try again shortly.',
+  }
+  if (statusMessages[status]) return statusMessages[status]
+  if (!error?.response && axios.isAxiosError(error)) {
+    return 'We could not connect to the service. Please check your internet connection and try again.'
+  }
+  if (!axios.isAxiosError(error) && error?.message) return error.message
+  return fallback
+}
+
+function normalizedApiError(error, fallback) {
+  const normalized = new Error(getApiError(error, fallback), { cause: error })
+  normalized.status = error?.response?.status || null
+  normalized.code = error?.code || null
+  normalized.retryable =
+    !error?.response ||
+    [408, 425, 429, 500, 502, 503, 504].includes(error.response.status)
+  return normalized
 }
 
 async function refreshAccessToken() {
@@ -69,8 +113,8 @@ async function refreshAccessToken() {
     setTokens({ ...tokens, accessToken: data.accessToken })
     return data.accessToken
   } catch (error) {
-    clearTokens()
-    throw new Error(getApiError(error, 'Session expired'), { cause: error })
+    if ([400, 401, 403].includes(error.response?.status)) clearTokens()
+    throw normalizedApiError(error, 'We could not refresh your session. Please try again.')
   }
 }
 
@@ -86,14 +130,15 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+    const authenticatedRequest = Boolean(originalRequest?.headers?.Authorization)
+    if (error.response?.status === 401 && authenticatedRequest && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true
       const accessToken = await refreshAccessToken()
       originalRequest.headers.Authorization = `Bearer ${accessToken}`
       return apiClient(originalRequest)
     }
 
-    throw new Error(getApiError(error), { cause: error })
+    throw normalizedApiError(error)
   },
 )
 
@@ -257,9 +302,7 @@ export async function submitLead(type, payload) {
       trackLeadConversion(savedLead)
       return { queued: false, lead: savedLead, result }
     } catch (error) {
-      if (!/failed|not found|cannot|request/i.test(error.message)) {
-        throw error
-      }
+      if (!error.retryable && ![404, 405].includes(error.status)) throw error
     }
   }
 

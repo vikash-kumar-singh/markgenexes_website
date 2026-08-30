@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { backendRoot } from "../../config/environment.js";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { ApplicationActivity, CareerApplication, JobOpening, Site } from "../../models/index.js";
@@ -58,7 +59,7 @@ function jobPayload(body, current = {}) {
 function jobJson(job) { return { id: String(job._id), title: job.title, slug: job.slug, department: job.department || "", employmentType: job.employmentType, workMode: job.workMode, location: job.location || "", experienceRequired: job.experienceRequired || "", salaryRange: job.salaryRange || "", description: job.description, shortDescription: job.shortDescription || job.description, responsibilities: job.responsibilities || [], requirements: job.qualifications || [], skills: job.skills || [], benefits: job.benefits || [], numberOfOpenings: job.numberOfOpenings, applicationDeadline: job.applicationDeadline, displayOrder: job.displayOrder, status: job.status, applicationCount: job.applicationCount, createdAt: job.createdAt, updatedAt: job.updatedAt }; }
 function applicationJson(app) { const job = app.jobOpening || {}; const message = app.coverLetter || app.emailMessage || ""; return { id: String(app._id), jobId: job._id ? String(job._id) : String(app.jobOpening), appliedJob: job.title || "", department: job.department || "", name: `${app.firstName} ${app.lastName}`.trim(), firstName: app.firstName, lastName: app.lastName, email: app.email, phone: app.phone || "", resumeAvailable: Boolean(app.resumeStorageName || app.resumeData), resumeFileName: app.resumeFileName || "", portfolio: app.portfolio || "", linkedinProfile: app.linkedinProfile || "", experience: app.experience || "", coverLetter: app.emailSubject ? `Subject: ${app.emailSubject}\n\n${message}` : message, subject: app.emailSubject || "", source: app.source || "website", attachments: app.emailAttachments || [], status: app.status, appliedAt: app.appliedAt || app.createdAt }; }
 
-const resumeDirectory = path.resolve(process.cwd(), "private_uploads", "resumes");
+const resumeDirectory = path.join(backendRoot, "private_uploads", "resumes");
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const allowedResumeTypes = new Set(["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]);
 function hasValidResumeSignature(file) {

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="MarkGenexes brand mark">
+  <defs>
+    <linearGradient id="brand" x1="34" y1="28" x2="217" y2="218" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B5CF6"/>
+      <stop offset=".45" stop-color="#6D28D9"/>
+      <stop offset="1" stop-color="#312E81"/>
+    </linearGradient>
+    <linearGradient id="brandDeep" x1="46" y1="75" x2="202" y2="202" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5B21B6"/>
+      <stop offset="1" stop-color="#312E81"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#brand)" fill-rule="evenodd" d="M128 20 222 78v96l-31 19V99l-63 39-63-39v94l-31-19V78l94-58Zm0 36L76 88l52 32 52-32-52-32Z"/>
+  <path fill="url(#brandDeep)" d="m112.5 128.5 15.5 9.5 15.5-9.5V218h-31v-89.5Z"/>
+  <circle cx="214" cy="42" r="18" fill="#7C3AED"/>
+</svg>

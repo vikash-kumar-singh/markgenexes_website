@@ -5,8 +5,8 @@ const roleSchema = new mongoose.Schema(
     name: {
       type: String,
       required: [true, "Role name is required"],
-      unique: true,
       trim: true,
+      lowercase: true,
     },
     description: {
       type: String,
@@ -57,7 +57,7 @@ const roleSchema = new mongoose.Schema(
   }
 );
 
-roleSchema.index({ organization: 1, name: 1 });
+roleSchema.index({ organization: 1, name: 1 }, { unique: true });
 roleSchema.index({ status: 1 });
 
 export default mongoose.model("Role", roleSchema);

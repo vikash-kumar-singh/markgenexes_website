@@ -1,7 +1,7 @@
 import { cn } from '../../lib/utils'
 
 export function Card({ className, interactive = false, ...props }) {
-  return <div className={cn('surface-card rounded-lg', interactive && 'interactive-card', className)} {...props} />
+  return <div className={cn('surface-card rounded-2xl', interactive && 'interactive-card', className)} {...props} />
 }
 
 export function CardHeader({ className, ...props }) {

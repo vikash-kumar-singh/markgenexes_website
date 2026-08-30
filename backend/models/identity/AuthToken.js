@@ -5,8 +5,11 @@ const authTokenSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required() {
+        return this.type !== "invitation";
+      },
     },
+    email: { type: String, trim: true, lowercase: true },
     organization: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Organization",

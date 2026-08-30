@@ -12,6 +12,12 @@ export class PasswordUtil {
 
   static validate(password) {
     const minLength = 8;
+    if (typeof password !== "string") {
+      return { valid: false, error: "Password must be a string" };
+    }
+    if (Buffer.byteLength(password, "utf8") > 72) {
+      return { valid: false, error: "Password must not exceed 72 UTF-8 bytes" };
+    }
     const hasUpperCase = /[A-Z]/.test(password);
     const hasLowerCase = /[a-z]/.test(password);
     const hasNumbers = /\d/.test(password);
