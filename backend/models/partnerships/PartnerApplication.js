@@ -9,7 +9,7 @@ const partnerApplicationSchema = new mongoose.Schema(
     },
     applicationType: {
       type: String,
-      enum: ["university", "agency", "reseller", "integration", "other"],
+      enum: ["university", "company", "agency", "reseller", "integration", "other"],
       required: true,
     },
     organizationName: {

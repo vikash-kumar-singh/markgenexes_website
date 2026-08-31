@@ -692,7 +692,7 @@ function CareersPage() {
           </h2>
           <div className="mt-5 grid max-w-3xl gap-4 text-sm leading-7 text-muted-foreground sm:text-base">
             <p>
-              We have spent twelve years building the kind of agency we would want to work at — one where you are trusted to do your best work, surrounded by people who raise your bar, and measured by the impact you create for clients.
+              We have spent twelve years building the kind of company we would want to work at — one where you are trusted to do your best work, surrounded by people who raise your bar, and measured by the impact you create for clients.
             </p>
             <p>
               No timesheets. No layers of approval for a tweet. Just clear goals, great teammates, and the freedom to figure out how to get there.
@@ -793,7 +793,7 @@ function PartnerPage() {
     <PageShell
       eyebrow="Partnerships"
       title="Partner with MarkGenexes for clients, universities, and admissions growth."
-      description="Built for agencies, referral partners, university partners, and admission partners that need reliable growth execution."
+      description="Built for companies, referral partners, university partners, and admission partners that need reliable growth execution."
       cta={null}
     >
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -1494,7 +1494,7 @@ function Footer() {
             <div className="min-w-0 sm:col-span-2 lg:col-span-1">
               <BrandLogo dark markClassName="size-12" />
               <p className="mt-5 max-w-sm text-sm leading-7 text-slate-300">
-                A full-service marketing agency helping brands grow through data-driven strategy, creative storytelling, and digital innovation.
+                A full-service marketing company helping brands grow through data-driven strategy, creative storytelling, and digital innovation.
               </p>
               <div className="mt-5 flex flex-wrap gap-3" aria-label="Social media links">
                 {[['IN', 'LinkedIn'], ['X', 'X'], ['F', 'Facebook'], ['IG', 'Instagram']].map(([short, label]) => (

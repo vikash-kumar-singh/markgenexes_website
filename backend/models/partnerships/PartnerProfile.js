@@ -17,7 +17,7 @@ const partnerProfileSchema = new mongoose.Schema(
     },
     partnerType: {
       type: String,
-      enum: ["university", "agency", "reseller", "integration", "other"],
+      enum: ["university", "company", "agency", "reseller", "integration", "other"],
     },
     primaryContact: {
       type: mongoose.Schema.Types.ObjectId,

@@ -2,10 +2,10 @@ import mongoose from "mongoose";
 import { PartnerContent, Site } from "../../models/index.js";
 
 const SITE = "markgenexes";
-const defaults = ["University Partner", "Admission Partner", "Agency Partner", "Client Portal Ready"];
+const defaults = ["University Partner", "Admission Partner", "Company Partner", "Client Portal Ready"];
 const description = "Partnership workflows are designed with future portal roles, reporting, document sharing, and project tracking.";
 async function getSite(){return Site.findOne({subdomain:SITE})}
-async function seed(site){if(await PartnerContent.exists({site:site._id}))return;await PartnerContent.insertMany(defaults.map((name,displayOrder)=>({site:site._id,name,description,displayOrder,status:"published",publishedAt:new Date()})))}
+async function seed(site){await PartnerContent.updateMany({site:site._id,name:"Agency Partner"},{$set:{name:"Company Partner"}});if(await PartnerContent.exists({site:site._id}))return;await PartnerContent.insertMany(defaults.map((name,displayOrder)=>({site:site._id,name,description,displayOrder,status:"published",publishedAt:new Date()})))}
 function json(item){return{id:String(item._id),name:item.name,description:item.description,displayOrder:item.displayOrder||0,status:item.status,publishedAt:item.publishedAt,createdAt:item.createdAt,updatedAt:item.updatedAt}}
 function payload(body,current={}){const name=String(body.name??current.name??"").trim(),descriptionValue=String(body.description??current.description??"").trim();if(!name||!descriptionValue)throw new Error("Partner name and short description are required");return{name,description:descriptionValue,displayOrder:Math.max(0,Number(body.displayOrder??current.displayOrder??0)),status:["draft","published"].includes(body.status)?body.status:current.status||"draft"}}
 export class PartnerContentController{
